@@ -1,0 +1,76 @@
+# RepoTest-Bridge demo task manifest.
+#
+# This is a SYNTHETIC repository authored for this project. It exists so the
+# full pipeline (retrieve -> generate -> validate -> evaluate) can run offline,
+# with no API key and no network access. Results produced with this manifest
+# are PIPELINE VALIDATION ONLY and must never be reported as model performance.
+
+version: 1
+tasks:
+  - task_id: demo-001
+    split: demo
+
+    # ------------------------------------------------------------------
+    # GENERATION INPUTS. Everything the retriever, prompt builder and
+    # generator are allowed to see. Nothing below may reference the fix.
+    # ------------------------------------------------------------------
+    generation:
+      repo_url: null
+      # Resolved relative to this manifest file (docs/experiment_protocol.md §1).
+      local_path: repo
+      # Synthetic task: there is no upstream commit. The harness identifies
+      # the checkout by content digest instead (see docs/experiment_protocol.md).
+      base_commit: null
+      issue_title: "Volume discount tiers are not applied at exact tier boundaries"
+      issue_body: |
+        Orders whose quantity falls *exactly* on a tier threshold do not receive
+        the tier discount.
+
+        Reproduction:
+            >>> from pricinglib.pricing import discount_rate
+            >>> discount_rate(20)
+            0.0          # expected 0.10
+            >>> discount_rate(50)
+            0.0          # expected 0.15
+            >>> discount_rate(100)
+            0.0          # expected 0.25
+
+        Quantities just above a threshold (21, 51, 101) are discounted correctly,
+        so the tier boundaries appear to be off by one: the comparison excludes
+        the threshold itself.
+
+        Expected behaviour after the fix:
+          * quantity >= 100 -> 25% off
+          * quantity >=  50 -> 15% off
+          * quantity >=  20 -> 10% off
+          * quantity <   20 -> no discount
+
+        Discounted totals continue to truncate toward zero in whole cents.
+        Negative totals and negative quantities must keep raising ValueError.
+      issue_source_url: null
+      test_command: "python -m pytest -q"
+      language: python
+      test_framework: pytest
+      runtime_requirements:
+        python: ">=3.9"
+      license: "Apache-2.0"
+      provenance: "synthetic, authored for this repository (RepoTest-Bridge demo)"
+      notes: >-
+        Used only for offline pipeline validation. Never included in reported
+        fail-to-pass rates for real model experiments.
+      exclusion_reason: null
+
+    # ------------------------------------------------------------------
+    # EVALUATION-ONLY. Never surfaced to the generator; enforced by type
+    # separation in src/repotest_bridge/tasks.py.
+    # ------------------------------------------------------------------
+    evaluation:
+      fixed_commit: null
+      code_patch_file: gold/code_fix.diff
+      gold_test_patch_file: gold/gold_test.diff
+      fail_to_pass:
+        - "tests/test_bulk_discount_boundaries.py::test_exact_lower_boundary_gets_ten_percent"
+        - "tests/test_bulk_discount_boundaries.py::test_exact_middle_boundary_gets_fifteen_percent"
+        - "tests/test_bulk_discount_boundaries.py::test_exact_upper_boundary_gets_twenty_five_percent"
+        - "tests/test_bulk_discount_boundaries.py::test_all_boundaries_are_discounted"
+        - "tests/test_bulk_discount_boundaries.py::test_bulk_discount_at_exact_boundary"

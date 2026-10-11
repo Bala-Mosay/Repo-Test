@@ -1,0 +1,60 @@
+diff --git a/tests/test_bulk_discount_boundaries.py b/tests/test_bulk_discount_boundaries.py
+new file mode 100644
+index 0000000..8da085a
+--- /dev/null
++++ b/tests/test_bulk_discount_boundaries.py
+@@ -0,0 +1,54 @@
++"""Regression tests for volume discount tier boundaries.
++
++Issue: discount tiers were never applied to orders whose quantity fell
++*exactly* on a tier threshold (20, 50 or 100 units), because the tier
++comparison used a strict greater-than instead of greater-or-equal.
++"""
++
++import pytest
++
++from pricinglib.pricing import bulk_discount, discount_rate
++from tests.helpers import assert_cents, rates_by_quantity
++
++
++def test_exact_lower_boundary_gets_ten_percent() -> None:
++    assert discount_rate(20) == 0.10
++
++
++def test_exact_middle_boundary_gets_fifteen_percent() -> None:
++    assert discount_rate(50) == 0.15
++
++
++def test_exact_upper_boundary_gets_twenty_five_percent() -> None:
++    assert discount_rate(100) == 0.25
++
++
++def test_all_boundaries_are_discounted(boundary_quantities) -> None:
++    expected = rates_by_quantity(boundary_quantities, [0.10, 0.15, 0.25])
++    for quantity, rate in expected.items():
++        assert discount_rate(quantity) == rate, f"quantity {quantity}"
++
++
++def test_bulk_discount_at_exact_boundary(cents) -> None:
++    assert_cents(bulk_discount(1000, 20), 900, label="1000c at 10%")
++    assert_cents(bulk_discount(1000, 50), 850, label="1000c at 15%")
++    assert_cents(bulk_discount(1000, 100), 750, label="1000c at 25%")
++
++
++def test_quantity_just_below_boundary_is_not_discounted() -> None:
++    assert discount_rate(19) == 0.0
++    assert discount_rate(49) == 0.10
++    assert discount_rate(99) == 0.15
++
++
++def test_negative_and_zero_quantities_unchanged() -> None:
++    assert discount_rate(0) == 0.0
++    assert discount_rate(-1) == 0.0
++    assert_cents(bulk_discount(500, 0), 500, label="no discount at qty 0")
++
++
++def test_validation_errors_still_raised() -> None:
++    with pytest.raises(ValueError, match="total_cents"):
++        bulk_discount(-1, 20)
++    with pytest.raises(ValueError, match="quantity"):
++        bulk_discount(100, -1)

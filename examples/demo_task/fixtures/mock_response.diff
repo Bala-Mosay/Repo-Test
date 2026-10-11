@@ -1,0 +1,26 @@
+diff --git a/tests/test_issue_repro.py b/tests/test_issue_repro.py
+new file mode 100644
+index 0000000..b8ddf62
+--- /dev/null
++++ b/tests/test_issue_repro.py
+@@ -0,0 +1,20 @@
++"""Reproduction of the reported tier-boundary discount bug.
++
++The issue reports that quantities landing *exactly* on a tier threshold
++(20, 50, 100) receive no discount, while quantities just above them do.
++These assertions pin the expected boundary behaviour from the issue text.
++"""
++
++from pricinglib.pricing import discount_rate
++
++
++def test_discount_rate_applies_at_lower_boundary():
++    assert discount_rate(20) == 0.10
++
++
++def test_discount_rate_applies_at_middle_boundary():
++    assert discount_rate(50) == 0.15
++
++
++def test_discount_rate_applies_at_upper_boundary():
++    assert discount_rate(100) == 0.25

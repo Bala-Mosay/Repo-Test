@@ -1,0 +1,13 @@
+diff --git a/pricinglib/pricing.py b/pricinglib/pricing.py
+index 91f5d87..dfd8cb2 100644
+--- a/pricinglib/pricing.py
++++ b/pricinglib/pricing.py
+@@ -24,7 +24,7 @@ def discount_rate(quantity: int) -> float:
+         return 0.0
+     rate = 0.0
+     for threshold, candidate in TIER_BREAKS:
+-        if quantity > threshold:
++        if quantity >= threshold:
+             rate = candidate
+     return rate
+ 

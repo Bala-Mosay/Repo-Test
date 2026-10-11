@@ -1,0 +1,43 @@
+# RepoTest-Bridge default configuration.
+# Values here are overridable by CLI flags and by environment variables
+# (prefix REPB_, double underscore for nesting, e.g. REPB_GENERATION__MAX_OUTPUT_TOKENS).
+
+retrieval:
+  # Hard ceiling on how much retrieved context may enter a prompt.
+  max_context_tokens: 6000
+  # Per-artifact-class ceilings so one class cannot crowd out the rest.
+  per_category_tokens:
+    source: 2500
+    related_test: 2000
+    fixture: 1000
+    conftest: 800
+    helper: 800
+    project_config: 600
+  max_items_per_category: 4
+  # Top-N issue-entity identifiers extracted for lexical matching.
+  max_issue_entities: 40
+
+generation:
+  temperature: 0.0
+  max_output_tokens: 2048
+  max_retries: 3
+  request_timeout_seconds: 120
+  retry_backoff_seconds: 2.0
+
+validation:
+  patch_apply_timeout_seconds: 60
+  # Reject any patch path that escapes the repository root or looks absolute.
+  allow_symlink_targets: false
+
+evaluation:
+  test_timeout_seconds: 300
+  # Bytes of captured stdout/stderr retained per run; the rest is elided.
+  max_output_bytes: 65536
+  # Never executed during install or unit tests -- explicit opt-in only.
+  require_explicit_command: true
+  workdir_name: ".repotest-eval"
+
+logging:
+  level: INFO
+  # Structured logs are JSON when true, human-readable text when false.
+  json: false
