@@ -63,7 +63,7 @@ about context selection.
 | D2 | `patches/*.diff` written for all four arms | ✅ |
 | E1 | exactly one provider call per arm (4 calls, 4 rows) | ✅ |
 
-Reproduce the artifact scan with `python scripts/verify_smoke.py`.
+Reproduce an artifact scan with `python scripts/verify_smoke.py <experiment_id>`.
 
 ### What this run caught
 
@@ -136,3 +136,112 @@ afterwards would invalidate comparisons.
 
 Real benchmark tasks — adapter over TDD-Bench-Verified (449) or SWT-Bench Lite
 (276), both Apache-2.0. That is the only path to actually answering H1–H4.
+
+---
+
+## smoke-real-02 / smoke-real-03 — 2026-10-11, instrument freeze
+
+**Status:** ✅ All five findings from smoke-real-01 decided, implemented and re-run.
+**Status as data:** ⚠️ **Still not a result.** N = 1 synthetic task. These runs exist
+to prove the instrument changed behaviour, not to measure context selection.
+
+`smoke-real-02` ran immediately after the code changes; `smoke-real-03` re-ran the
+identical configuration **after commit `ee83083`**, so its artifacts carry a real
+revision. **03 is the authoritative run** — 02 predates the fix to the control's
+candidate pool.
+
+| field | value |
+|---|---|
+| experiment id | `smoke-real-03` |
+| git | `sha = ee83083`, `dirty = False` — **now pinned** |
+| everything else | identical to smoke-real-01 (model, budget, manifest, 4 arms) |
+| wall clock | 28.0 s · 4 API calls |
+
+### Delta, 01 → 03
+
+| strategy | outcome 01 | outcome 03 | ctx 01 | ctx 03 |
+|---|---|---|---:|---:|
+| `issue_only` | `unexpected_pass_on_buggy` | `fails_on_fixed` | 0 | 0 |
+| `ctx_source_only` | `collect_fail` | `fails_on_fixed` | 308 | 308 |
+| `repo_aware` | `patch_apply_fail` (N=0) | `fails_on_fixed` | 1 101 | 1 101 |
+| `ctx_random_matched` | `unexpected_pass_on_buggy` | **`f2p_success`** | **550** | **981** |
+
+F2P **0/4 → 1/4**. More useful than the F2P change: *every* infrastructure-shaped
+failure disappeared.
+
+- `patch_apply_fail` → gone. Hunk line-count validation (A2) plus the hardened
+  output-format rules (A3) mean patches now parse and apply.
+- `collect_fail` → gone. The "put it under the test directory / never reuse an
+  existing file" rules (A3) landed the test where pytest collects it.
+- `unexpected_pass_on_buggy` (×2) → gone. The tests now actually assert the
+  boundary instead of trivially passing.
+- What remains is `fails_on_fixed` ×3 — the tests *do* fail on the buggy checkout
+  but still fail after the fix. That is a genuine model-quality failure
+  (over-specified assertion), exactly the kind of signal §4 exists to separate.
+
+### H4 control matching — the substantive fix
+
+The control's draw pool was `source_files | test_files`, narrower than the
+candidate pool `repo_aware` draws from (which also includes `test_tree_files`
+such as conftest/helpers, and `config_files`). On a small repository the pool
+exhausted itself and the control never reached its matched target:
+
+| run | control spend | matched target | achieved |
+|---|---:|---:|---:|
+| smoke-real-01 / 02 | 550 | 1 101 | 49.9% |
+| **smoke-real-03** | **981** | **1 101** | **89.1%** |
+
+A control at half the spend confounds *token budget* with *selection quality*, which
+is the exact thing H4 is supposed to hold constant. Guarded by
+`test_control_actually_spends_its_matched_target` (≥85%; the residual gap is a
+greedy whole-file fill and cannot close when every remaining file is larger than
+it).
+
+### Verification (smoke-real-03)
+
+| # | Check | Result |
+|---|---|---|
+| A1 | `meta.json`: provider, model, manifest sha | ✅ |
+| A2 | no `PIPELINE VALIDATION` banner (real run) | ✅ |
+| A3 | `request_id`, `attempts`, `finish_reason`, `latency_ms` on all 4 rows | ✅ |
+| A4 | `"pipeline_validation": false` written, as protocol §6 requires | ✅ |
+| B1 | `usage.model` identical across rows | ✅ |
+| B2 | 4 distinct `prompt_digest`s | ✅ |
+| B3 | `context.total_tokens ≤ 6000` | ✅ |
+| B4 | `ctx_random_matched.ceiling == repo_aware.total_tokens` (1 101) | ✅ |
+| B5 | control *actual* spend ≥85% of target (981 / 1 101) | ✅ |
+| C1 | no key, no `sk-or-`, no env-var name in any artifact | ✅ NONE |
+| D1 | outcome + `exit_codes` + `timings_ms` on every row | ✅ |
+| D2 | `patches/*.diff` written for all four arms, all `valid=True` | ✅ |
+| E1 | exactly 4 provider calls for 4 arms | ✅ |
+| F1 | `git.sha` non-null, `dirty=False` | ✅ `ee83083` |
+
+### Findings from smoke-real-01 — resolved
+
+| # | Finding | Decision |
+|---|---|---|
+| 1 | `--- {path} ---` separator read as a diff header | **Fixed** → `=== FILE: {path} ===`, plus prompt rules. `test_context_separator_is_not_a_diff_header` |
+| 2 | `looks_like_diff()` too permissive; wrong hunk counts surfaced as `patch_apply_fail` | **Fixed** → fatal only when stray lines precede the next `@@` header (what `git apply` rejects); a bad final-hunk count is recorded as a warning, because that shape still applies and LLM count errors are common |
+| 3 | §5.1 validity denominator tautological | **Amended** → denominator is now `tasks_attempted` (T), with the rationale recorded in the protocol |
+| 4 | §6 promised `pipeline_validation`, nothing wrote it | **Fixed** → written for every run; report banner keys off the field *or* the provider name |
+| 5 | No commits; `git.sha = None` | **Fixed** → committed as `ee83083`; 03 is pinned |
+
+### Also changed since 01
+
+- 9th outcome code `no_candidate_tests`, separating "the model put the test where
+  the suite never looks" from "the framework broke". Adds a `--collect-only` probe
+  that runs only when the buggy run otherwise passed.
+- Protocol §8 command list rewritten against the real CLI (`research` defaults to
+  `--dry-run`; executing repository code needs explicit `--execute`).
+- "eight outcome codes" → nine across `architecture.md`, `research_proposal.md`.
+
+### Why this is still not a result
+
+Same four reasons as smoke-real-01: one synthetic task, authored gold, a model
+that is not behind any published baseline, and N=1. The 0/4 → 1/4 movement is a
+statement about prompt and harness changes, not about context selection.
+
+### Next
+
+Commit and push this tree, then the real benchmark adapter —
+TDD-Bench-Verified (449) or SWT-Bench Lite (276), both Apache-2.0.
